@@ -46,9 +46,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="HashChain.cs" />
     <Compile Include="HashChainGenerator.cs" />
     <Compile Include="HashScheduler.cs" />
     <Compile Include="HashThread.cs" />
+    <Compile Include="Serializer.cs" />
     <Compile Include="TimeLock.cs">
       <SubType>Form</SubType>
     </Compile>

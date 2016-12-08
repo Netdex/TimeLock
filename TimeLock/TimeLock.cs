@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
@@ -20,45 +21,14 @@ namespace TimeLock
             InitializeComponent();
         }
 
+        private void TimeLock_Load(object sender, EventArgs e)
+        {
+            txtChainSaveLocation.Text = Path.GetDirectoryName(Assembly.GetAssembly(typeof(TimeLock)).Location);
+        }
+
         private HashScheduler _hashScheduler;
         private Stopwatch _stopwatch;
 
-        private int _timeLen;
-        private void btnLock_Click(object sender, EventArgs e)
-        {
-            string plaintext = txtPlaintext.Text;
-            int threads = (int)nmbEncryptThreads.Value;
-
-            _timeLen = (int)nmbEncryptSeconds.Value;
-            _stopwatch = Stopwatch.StartNew();
-            _hashScheduler = new HashScheduler(threads);
-            _hashScheduler.Start();
-            timerUpdate.Start();
-
-            txtEncryptOutput.Text = "";
-            grpEncryptOptions.Enabled = false;
-            btnEncryptLock.Enabled = false;
-            btnEncryptInterrupt.Enabled = true;
-
-            Task.Delay(_timeLen * 1000).ContinueWith(a =>
-              {
-                  Interrupt();
-              });
-        }
-
-        public void Interrupt()
-        {
-            _hashScheduler?.Interrupt();
-            timerUpdate.Stop();
-            txtEncryptOutput.Text = _hashScheduler?.ToString();
-            grpEncryptOptions.Enabled = true;
-            btnEncryptLock.Enabled = true;
-            btnEncryptInterrupt.Enabled = false;
-            lblEncryptProgress.Text = "DONE!";
-            progressBarEncrypt.Value = 100;
-
-            EncryptMessage();
-        }
 
         public void EncryptMessage(string message)
         {
@@ -66,14 +36,14 @@ namespace TimeLock
             byte[][] chainStart = new byte[_hashScheduler.ThreadCount + 1][];
             for (int i = 0; i < _hashScheduler.ThreadCount; i++)
                 chainStart[i] = _hashScheduler.ThreadPool[i].HashChainGenerator.Seed;
-            chainStart[chainStart.Length] = bmsg;
+            chainStart[chainStart.Length - 1] = bmsg;
             byte[][] chainEnd = new byte[_hashScheduler.ThreadCount ][];
             for (int i = 0; i < _hashScheduler.ThreadCount; i++)
                 chainEnd[i] = _hashScheduler.ThreadPool[i].HashChainGenerator.HashBuffer;
             
             byte[][] chainCiphers = new byte[_hashScheduler.ThreadCount][];
             byte[][] chainIVs = new byte[_hashScheduler.ThreadCount][];
-            for (int i = 0; i < _hashScheduler.ThreadCount - 1; i++)
+            for (int i = 0; i < _hashScheduler.ThreadCount; i++)
             {
                 using (Aes aesAlg = Aes.Create())
                 {
@@ -84,7 +54,8 @@ namespace TimeLock
                         {
                             using (CryptoStream cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
                             {
-                                cs.Write(chainStart[i + 1], 0, bmsg.Length);
+                                cs.Write(chainStart[i + 1], 0, chainStart[i + 1].Length);
+                                cs.FlushFinalBlock();
                             }
                             chainCiphers[i] = ms.ToArray();
                             chainIVs[i] = aesAlg.IV;
@@ -92,23 +63,71 @@ namespace TimeLock
                     }
                 }
             }
+
+            string o = $"Start: {BitConverter.ToString(chainStart[0]).Replace("-", "")}\n" +
+                       $"Chain -\n";
+            for (int i = 0; i < chainCiphers.Length; i++)
+            {
+                o +=
+                    $"\tEnc: {BitConverter.ToString(chainCiphers[i]).Replace("-", "")}\tIV: {BitConverter.ToString(chainIVs[i]).Replace("-", "")}\n";
+            }
+            txtEncryptOutput.Text = txtEncryptOutput.Text + o;
+
         }
 
         private void timerUpdate_Tick(object sender, EventArgs e)
         {
-            int val = Math.Min((int)(100 * _stopwatch.Elapsed.TotalSeconds / _timeLen), 100);
-            progressBarEncrypt.Value = val;
-            lblEncryptProgress.Text = val + "%";
+            int val = Math.Min((int)(100 * _stopwatch.Elapsed.TotalSeconds / (int)nmbEncryptSeconds.Value), 100);
+            progressBarChain.Value = val;
+            lblEncryptProgress.Text =
+                $"{val}% complete";
         }
 
         private void TimeLock_FormClosing(object sender, FormClosingEventArgs e)
         {
-            Interrupt();
+            InterruptChain();
         }
 
-        private void btnEncryptInterrupt_Click(object sender, EventArgs e)
+
+        private void btnChainLock_Click(object sender, EventArgs e)
         {
-            Interrupt();
+            int threads = (int)nmbEncryptThreads.Value;
+
+            _stopwatch = Stopwatch.StartNew();
+            _hashScheduler = new HashScheduler(threads);
+            _hashScheduler.Start();
+            timerUpdate.Start();
+
+            txtEncryptOutput.Text = "";
+            grpChainGenerationOptions.Enabled = false;
+            btnChainLock.Enabled = false;
+            btnChainInterrupt.Enabled = true;
+
+            Task.Delay((int)nmbEncryptSeconds.Value * 1000).ContinueWith(a =>
+            {
+                InterruptChain();
+            });
         }
+
+        private void btnChainInterrupt_Click(object sender, EventArgs e)
+        {
+            InterruptChain();
+        }
+
+        public void InterruptChain()
+        {
+
+            _hashScheduler?.Interrupt();
+            timerUpdate.Stop();
+            progressBarChain.Value = 100;
+            _stopwatch?.Stop();
+            
+            grpChainGenerationOptions.Enabled = true;
+            btnChainInterrupt.Enabled = false;
+            btnChainLock.Enabled = true;
+            _hashScheduler = null;
+        }
+
+        
     }
 }

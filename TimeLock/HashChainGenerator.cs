@@ -33,6 +33,16 @@ namespace TimeLock
             _shaProvider.Dispose();
         }
 
+        public HashChain GetHashChain()
+        {
+            return new HashChain()
+            {
+                Iterations = Iteration,
+                Seed = Seed,
+                HashBytes = HashBuffer
+            };
+        }
+
         public override string ToString()
         {
             return $"      Seed: {BitConverter.ToString(Seed).Replace("-", "")}\n" +
